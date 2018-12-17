@@ -29,6 +29,7 @@
 
 #include <boost/filesystem.hpp>
 
+#include <memory>
 #include <type_traits>
 
 #define GST_CAT_DEFAULT kurento_websocket_transport
@@ -46,6 +47,8 @@ const std::string DEFAULT_LOCAL_ADDRESS = "localhost";
 const ushort WEBSOCKET_PORT_DEFAULT = 8888;
 const std::string WEBSOCKET_PATH_DEFAULT = "kurento";
 const int WEBSOCKET_THREADS_DEFAULT = 10;
+const int WEBSOCKET_CONNQUEUE_DEFAULT =
+  boost::asio::socket_base::max_connections;
 
 class configuration_exception : public std::exception
 {
@@ -55,8 +58,7 @@ public:
     this->message = message;
   }
 
-  virtual const char *what() const _GLIBCXX_USE_NOEXCEPT
-  {
+  const char *what() const _GLIBCXX_USE_NOEXCEPT override {
     return message.c_str();
   }
 
@@ -71,6 +73,7 @@ WebSocketTransport::WebSocketTransport (const boost::property_tree::ptree
 {
   ushort port;
   ushort securePort;
+  int connqueue;
   std::string registrarAddress;
   std::string localAddress;
 
@@ -80,6 +83,9 @@ WebSocketTransport::WebSocketTransport (const boost::property_tree::ptree
 
   path = config.get<std::string> ("mediaServer.net.websocket.path",
                                   WEBSOCKET_PATH_DEFAULT);
+
+  connqueue = config.get<uint> ("mediaServer.net.websocket.connqueue",
+                                WEBSOCKET_CONNQUEUE_DEFAULT);
 
   try {
     n_threads = config.get<uint> ("mediaServer.net.websocket.threads");
@@ -103,6 +109,7 @@ WebSocketTransport::WebSocketTransport (const boost::property_tree::ptree
   server.clear_error_channels (websocketpp::log::alevel::all);
 
   server.init_asio (&ios);
+  server.set_listen_backlog (connqueue);
   server.set_reuse_addr (true);
   server.set_open_handler (std::bind ( (void (WebSocketTransport::*) (
                                           WebSocketServer *, websocketpp::connection_hdl) )
@@ -181,10 +188,10 @@ WebSocketTransport::WebSocketTransport (const boost::property_tree::ptree
           context->set_options (boost::asio::ssl::context::default_workarounds |
           boost::asio::ssl::context::no_sslv2 |
           boost::asio::ssl::context::single_dh_use);
-          context->set_password_callback (std::bind ([password] (void) -> std::string {
+          context->set_password_callback(std::bind([password]() -> std::string {
             GST_INFO ("password");
             return password;
-          }) );
+          }));
           context->use_certificate_chain_file (certificateFile.string() );
           context->use_private_key_file (certificateFile.string(), boost::asio::ssl::context::pem);
         } catch (std::exception &e)
@@ -216,14 +223,12 @@ WebSocketTransport::WebSocketTransport (const boost::property_tree::ptree
                              DEFAULT_LOCAL_ADDRESS);
 
   if (!registrarAddress.empty () && !localAddress.empty () ) {
-    registrar = std::shared_ptr<WebSocketRegistrar> (new WebSocketRegistrar (
-                  registrarAddress, localAddress, port, securePort, path) );
+    registrar = std::make_shared<WebSocketRegistrar>(
+        registrarAddress, localAddress, port, securePort, path);
   }
 }
 
-WebSocketTransport::~WebSocketTransport() throw ()
-{
-}
+WebSocketTransport::~WebSocketTransport() noexcept = default;
 
 void WebSocketTransport::run()
 {
@@ -283,7 +288,7 @@ void WebSocketTransport::start ()
   }
 
   for (int i = 0; i < n_threads; i++) {
-    threads.push_back (std::thread (std::bind (&WebSocketTransport::run, this) ) );
+    threads.emplace_back(std::bind(&WebSocketTransport::run, this));
   }
 
   std::unique_lock<std::recursive_mutex> lock (mutex);
@@ -419,9 +424,9 @@ void WebSocketTransport::processMessage (ServerType *s,
     /* Ignore, there is no previous sessionId */
   }
 
-  GST_DEBUG ("Message: >%s<", request.c_str() );
+  GST_DEBUG ("Message: %s", request.c_str() );
   sessionId = processor->process (request, response, sessionId);
-  GST_DEBUG ("Response: >%s<", response.c_str() );
+  GST_DEBUG ("Response: %s", response.c_str() );
 
   storeConnection (request, response, hdl,
                    std::is_same<ServerType, SecureWebSocketServer>::value, sessionId);

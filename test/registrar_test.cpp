@@ -37,8 +37,8 @@ static const std::string LOCAL_ADDRESS = "localhost";
 #define LOCAL_PORT_STR xstr(LOCAL_PORT)
 static const std::string WS_PATH = "path";
 static const std::string REGISTRAR_MESSAGE =
-  "{\"jsonrpc\":\"2.0\",\"method\":\"register\",\"params\":{\"ws\":\"ws://" +
-  LOCAL_ADDRESS + ":" + LOCAL_PORT_STR + "/" + WS_PATH + "\"}}\n";
+    R"({"jsonrpc":"2.0","method":"register","params":{"ws":"ws://)" +
+    LOCAL_ADDRESS + ":" + LOCAL_PORT_STR + "/" + WS_PATH + "\"}}";
 
 static const std::string PASSWORD = "";
 static const boost::filesystem::path
@@ -89,7 +89,7 @@ BOOST_AUTO_TEST_CASE ( wss_registrar )
   SecureWebSocketServer server;
   boost::asio::io_service ios;
 
-  gst_init (NULL, NULL);
+  gst_init(nullptr, nullptr);
 
   kurento::WebSocketRegistrar registrar ("wss://localhost:" + std::to_string (
       PORT), LOCAL_ADDRESS, LOCAL_PORT, 0, WS_PATH);
@@ -116,9 +116,8 @@ BOOST_AUTO_TEST_CASE ( wss_registrar )
       context->set_options (boost::asio::ssl::context::default_workarounds |
       boost::asio::ssl::context::no_sslv2 |
       boost::asio::ssl::context::single_dh_use);
-      context->set_password_callback (std::bind ([] (void) -> std::string {
-        return PASSWORD;
-      }) );
+      context->set_password_callback(
+          std::bind([]() -> std::string { return PASSWORD; }));
       context->use_certificate_chain_file (CERTIFICATE_FILE.string() );
       context->use_private_key_file (CERTIFICATE_FILE.string(), boost::asio::ssl::context::pem);
     } catch (std::exception &e)

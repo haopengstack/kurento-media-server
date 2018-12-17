@@ -19,6 +19,7 @@
 
 #include "KurentoException.hpp"
 
+#include <memory>
 #include <websocketpp/config/asio_no_tls_client.hpp>
 #include <websocketpp/client.hpp>
 #include <thread>
@@ -88,8 +89,8 @@ F::start_server ()
   conf_file = getenv ("MEDIA_SERVER_CONF_FILE");
   binary_dir = getenv ("SERVER_DIR");
 
-  if (conf_file == NULL) {
-    BOOST_FAIL ("No configuration file for mediaserver");
+  if (conf_file == nullptr) {
+    BOOST_FAIL ("No configuration file for Kurento Media Server");
   }
 
   // Find an empty port
@@ -196,7 +197,10 @@ Json::Value F::sendRequest (const Json::Value &request)
   BOOST_REQUIRE_MESSAGE (!sendingMessage, "Already sending a message");
 
   sendingMessage = true;
-  client->send (connectionHdl, writer.write (request),
+
+  Json::StreamWriterBuilder writerFactory;
+  writerFactory["indentation"] = "";
+  client->send (connectionHdl, Json::writeString (writerFactory, request),
                 websocketpp::frame::opcode::text);
 
   requestId = request[JSON_RPC_ID].asString();
@@ -236,7 +240,7 @@ void F::start_client()
   std::unique_lock <std::mutex> lock (mutex);
 
   while (!initialized && !terminate) {
-    client = std::shared_ptr <WebSocketClient> (new WebSocketClient() );
+    client = std::make_shared<WebSocketClient>();
 
     client->clear_access_channels (websocketpp::log::alevel::all);
     client->clear_error_channels (websocketpp::log::elevel::all);
@@ -354,7 +358,7 @@ F::start ()
   id = 0;
 
   start_server();
-  BOOST_REQUIRE_MESSAGE (pid > 0, "Error launching mediaserver");
+  BOOST_REQUIRE_MESSAGE (pid > 0, "Error launching Kurento Media Server");
 
   clientThread = std::thread (std::bind (&F::start_client, this) );
 
@@ -397,7 +401,7 @@ F::stop()
 
 F::F ()
 {
-  gst_init (NULL, NULL);
+  gst_init(nullptr, nullptr);
   GST_DEBUG_CATEGORY_INIT (GST_CAT_DEFAULT, GST_DEFAULT_NAME, 0,
                            GST_DEFAULT_NAME);
 }
